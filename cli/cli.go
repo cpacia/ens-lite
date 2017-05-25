@@ -1,15 +1,13 @@
 package cli
 
 import (
+	"fmt"
+	"github.com/cpacia/ens-lite/api"
 	"github.com/jessevdk/go-flags"
+	"io/ioutil"
 	"net/http"
 	"time"
-	"github.com/cpacia/ens-lite/api"
-	"fmt"
-	"io/ioutil"
 )
-
-
 
 func SetupCli(parser *flags.Parser) {
 	// Add commands to parser

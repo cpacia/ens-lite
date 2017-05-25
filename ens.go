@@ -2,34 +2,40 @@ package ens
 
 import (
 	"github.com/ethereum/go-ethereum/common"
-	ens"github.com/ethereum/go-ethereum/contracts/ens/contract"
+	ens "github.com/ethereum/go-ethereum/contracts/ens/contract"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/mobile"
-	"path/filepath"
-	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/node"
 	"encoding/json"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/downloader"
-	"github.com/ethereum/go-ethereum/les"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethstats"
+	"github.com/ethereum/go-ethereum/les"
+	"github.com/ethereum/go-ethereum/mobile"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/p2p/discv5"
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/p2p/discv5"
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"path/filepath"
+	"github.com/ethereum/go-ethereum"
+	"context"
+	"errors"
 )
 
+var ErrorBlockchainSyncing error = errors.New("Cannot resolve names while the chain is syncing")
+var ErrorNodeInitializing error = errors.New("Node is still initializing")
+
 type ENSLiteClient struct {
-	node *node.Node
+	node        *node.Node
 	nameService *ens.ENS
 }
 
-func NewENSLiteClient(dataDir string) (*ENSLiteClient, error){
+func NewENSLiteClient(dataDir string) (*ENSLiteClient, error) {
 	config := geth.NewNodeConfig()
 	config.MaxPeers = 25
 	config.BootstrapNodes = geth.FoundationBootnodes()
@@ -124,6 +130,10 @@ func (self *ENSLiteClient) Resolve(name string) ([32]byte, error) {
 		return h, err
 	}
 	api := ethclient.NewClient(rpc)
+	sp, _ := api.SyncProgress(context.Background())
+	if sp != nil {
+		return h, ErrorBlockchainSyncing
+	}
 	if self.nameService == nil {
 		// Geth must be patched here to return the RawClient()
 		ns, err := ens.NewENS(common.HexToAddress("0x314159265dD8dbb310642f98f50C066173C1259b"), api)
@@ -145,6 +155,18 @@ func (self *ENSLiteClient) Resolve(name string) ([32]byte, error) {
 		return h, err
 	}
 	return h, nil
+}
+
+func (self *ENSLiteClient) SyncProgress() (*ethereum.SyncProgress, error){
+	if self.node == nil {
+		return nil, ErrorNodeInitializing
+	}
+	rpc, err := self.node.Attach()
+	if err != nil {
+		return nil, err
+	}
+	api := ethclient.NewClient(rpc)
+	return api.SyncProgress(context.Background())
 }
 
 func ensParentNode(name string) (common.Hash, common.Hash) {

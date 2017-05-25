@@ -1,16 +1,16 @@
 package main
 
 import (
+	"fmt"
+	"github.com/cpacia/ens-lite"
+	"github.com/cpacia/ens-lite/api"
+	"github.com/cpacia/ens-lite/cli"
+	"github.com/jessevdk/go-flags"
+	"github.com/mitchellh/go-homedir"
 	"os"
 	"os/signal"
-	"fmt"
-	"github.com/jessevdk/go-flags"
-	"github.com/cpacia/ens-lite"
 	"path/filepath"
 	"runtime"
-	"github.com/mitchellh/go-homedir"
-	"github.com/cpacia/ens-lite/cli"
-	"github.com/cpacia/ens-lite/api"
 )
 
 const VERSION = "0.1.0"
@@ -18,7 +18,7 @@ const VERSION = "0.1.0"
 var parser = flags.NewParser(nil, flags.Default)
 
 type Start struct {
-	DataDir          string `short:"d" long:"datadir" description:"specify the data directory to be used"`
+	DataDir string `short:"d" long:"datadir" description:"specify the data directory to be used"`
 }
 type Version struct{}
 
@@ -91,7 +91,6 @@ func getRepoPath() (string, error) {
 	case "darwin":
 		path = "~/Library/Application Support"
 	}
-
 
 	// Join the path and directory name, then expand the home path
 	fullPath, err := homedir.Expand(filepath.Join(path, directoryName))
