@@ -2,7 +2,7 @@
 Resolve ENS names without downloading full Ethereum blockchain. The resolver syncs the blockchain headers and verifies names against
 the state tree.
 
-Examples:
+Examples (make sure go-ethereum is installed first):
 ```
 cd $GOPATH/src/github.com/cpacia/ens-lite/cmd/ens-lite
 go install
