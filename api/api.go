@@ -1,26 +1,39 @@
 package api
 
 import (
-	"encoding/hex"
 	"fmt"
 	"github.com/cpacia/ens-lite"
+	"github.com/miekg/dns"
 	"net/http"
 	"path"
+	"time"
+	"strconv"
 )
 
 const Addr = "127.0.0.1:31313"
 
-var client *ens.ENSLiteClient
+var client *apiClient
+
+type apiClient struct {
+	ensClient *ens.ENSLiteClient
+	cache     map[string]cachedRecord
+}
+
+type cachedRecord struct {
+	rr         dns.RR
+	expiration time.Time
+}
 
 func ServeAPI(ensClient *ens.ENSLiteClient) error {
 	topMux := http.NewServeMux()
 	handler := new(resolverHandler)
+
 	topMux.Handle("/resolver/", handler)
-	topMux.Handle("/ws",newWSAPIHandler(ensClient))
+	topMux.Handle("/ws", newWSAPIHandler(ensClient))
 	srv := &http.Server{Addr: Addr, Handler: topMux}
 	handler.server = srv
 
-	client = ensClient
+	client = &apiClient{ensClient, make(map[string]cachedRecord)}
 	err := srv.ListenAndServe()
 	if err != nil {
 		return err
@@ -28,25 +41,50 @@ func ServeAPI(ensClient *ens.ENSLiteClient) error {
 	return nil
 }
 
-type resolverHandler struct{
+type resolverHandler struct {
 	server *http.Server
 }
 
 func resolve(w http.ResponseWriter, r *http.Request) {
 	_, name := path.Split(r.URL.Path)
-	resp, err := client.Resolve(name)
+	lookup := r.URL.Query().Get("lookup")
+	l, _ := strconv.ParseBool(lookup)
+	record, ok := client.cache[name]
+	if ok {
+		if time.Now().Before(record.expiration) {
+			fmt.Fprint(w, record.rr.(*dns.A).A.String())
+			return
+		} else {
+			delete(client.cache, name)
+		}
+	}
+
+	resp, err := client.ensClient.Resolve(name)
 	if err != nil && err == ens.ErrorBlockchainSyncing {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
-	} else if err != nil {
+	} else if err != nil || len(resp) == 0 {
+		fmt.Println("here", err)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	fmt.Fprint(w, hex.EncodeToString(resp[:]))
+	client.cache[name] = cachedRecord{resp[0], time.Now().Add(time.Duration(resp[0].Header().Ttl))}
+	if l {
+		var ret string
+		for i, rec := range resp {
+			ret += rec.String()
+			if i != len(resp) - 1 {
+				ret += "\n"
+			}
+		}
+		fmt.Fprint(w, ret)
+	} else {
+		fmt.Fprint(w, resp[0].(*dns.A).A.String())
+	}
 }
 
 func (rh resolverHandler) shutdown() {
-	client.Stop()
+	client.ensClient.Stop()
 	rh.server.Close()
 }
 

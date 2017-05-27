@@ -1,38 +1,38 @@
 package ens
 
 import (
-	"github.com/ethereum/go-ethereum/common"
-	ens "github.com/ethereum/go-ethereum/contracts/ens/contract"
-
-	"github.com/ethereum/go-ethereum/crypto"
-	"strings"
-
 	"encoding/json"
 	"fmt"
-	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethstats"
 	"github.com/ethereum/go-ethereum/les"
 	"github.com/ethereum/go-ethereum/mobile"
-	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
-	"github.com/ethereum/go-ethereum/p2p/nat"
-	"github.com/ethereum/go-ethereum/params"
 	"path/filepath"
-	"github.com/ethereum/go-ethereum"
+	ens "github.com/Arachnid/ensdns/ens"
+
 	"context"
 	"errors"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/p2p/nat"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/miekg/dns"
 )
 
 var ErrorBlockchainSyncing error = errors.New("Cannot resolve names while the chain is syncing")
 var ErrorNodeInitializing error = errors.New("Node is still initializing")
+var ErrorNoRecords error = errors.New("No DNS records found")
 
 type ENSLiteClient struct {
 	node        *node.Node
-	nameService *ens.ENS
+	nameService *ens.Registry
 }
 
 func NewENSLiteClient(dataDir string) (*ENSLiteClient, error) {
@@ -123,41 +123,32 @@ func (self *ENSLiteClient) Stop() {
 }
 
 // Resolve a name. The merkle proofs will be validated automatically.
-func (self *ENSLiteClient) Resolve(name string) ([32]byte, error) {
-	var h [32]byte
+func (self *ENSLiteClient) Resolve(name string) ([]dns.RR, error) {
+	var rr []dns.RR
 	rpc, err := self.node.Attach()
 	if err != nil {
-		return h, err
+		return rr, err
 	}
 	api := ethclient.NewClient(rpc)
 	sp, _ := api.SyncProgress(context.Background())
 	if sp != nil {
-		return h, ErrorBlockchainSyncing
+		return rr, ErrorBlockchainSyncing
 	}
 	if self.nameService == nil {
-		// Geth must be patched here to return the RawClient()
-		ns, err := ens.NewENS(common.HexToAddress("0x314159265dD8dbb310642f98f50C066173C1259b"), api)
+		reg, err := ens.New(api, common.HexToAddress("0x314159265dD8dbb310642f98f50C066173C1259b"), bind.TransactOpts{})
 		if err != nil {
-			return h, err
+			return rr, err
 		}
-		self.nameService = ns
+		self.nameService = reg
 	}
-	resolverAddress, err := self.nameService.Resolver(nil, ensNode(name))
+	resolver, err := self.nameService.GetResolver(name)
 	if err != nil {
-		return h, err
+		return rr, err
 	}
-	resolver, err := ens.NewResolver(resolverAddress, api)
-	if err != nil {
-		return h, err
-	}
-	h, err = resolver.Content(nil, ensNode(name))
-	if err != nil {
-		return h, err
-	}
-	return h, nil
+	return resolver.GetRRs()
 }
 
-func (self *ENSLiteClient) SyncProgress() (*ethereum.SyncProgress, error){
+func (self *ENSLiteClient) SyncProgress() (*ethereum.SyncProgress, error) {
 	if self.node == nil {
 		return nil, ErrorNodeInitializing
 	}
@@ -167,20 +158,4 @@ func (self *ENSLiteClient) SyncProgress() (*ethereum.SyncProgress, error){
 	}
 	api := ethclient.NewClient(rpc)
 	return api.SyncProgress(context.Background())
-}
-
-func ensParentNode(name string) (common.Hash, common.Hash) {
-	parts := strings.SplitN(name, ".", 2)
-	label := crypto.Keccak256Hash([]byte(parts[0]))
-	if len(parts) == 1 {
-		return [32]byte{}, label
-	} else {
-		parentNode, parentLabel := ensParentNode(parts[1])
-		return crypto.Keccak256Hash(parentNode[:], parentLabel[:]), label
-	}
-}
-
-func ensNode(name string) common.Hash {
-	parentNode, parentLabel := ensParentNode(name)
-	return crypto.Keccak256Hash(parentNode[:], parentLabel[:])
 }

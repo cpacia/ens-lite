@@ -98,6 +98,6 @@ func (wsh wsHandler) serveSyncProgress() {
 		downloaded := current - start
 
 		progress := float64(downloaded) / float64(total)
-		wsh.h.Broadcast <- []byte(fmt.Sprintf(`%.2f`, progress))
+		wsh.h.Broadcast <- []byte(fmt.Sprintf(`%.3f`, progress))
 	}
 }
