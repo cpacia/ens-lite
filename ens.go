@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/params"
+	ens2 "github.com/ethereum/go-ethereum/contracts/ens"
 	"github.com/miekg/dns"
 )
 
@@ -32,7 +33,8 @@ var ErrorNoRecords error = errors.New("No DNS records found")
 
 type ENSLiteClient struct {
 	node        *node.Node
-	nameService *ens.Registry
+	dnsService  *ens.Registry
+	addrService *ens2.ENS
 }
 
 func NewENSLiteClient(dataDir string) (*ENSLiteClient, error) {
@@ -109,7 +111,7 @@ func NewENSLiteClient(dataDir string) (*ENSLiteClient, error) {
 			}
 		}
 	}
-	return &ENSLiteClient{rawStack, nil}, nil
+	return &ENSLiteClient{rawStack, nil, nil}, nil
 }
 
 // Start the SPV node
@@ -123,7 +125,7 @@ func (self *ENSLiteClient) Stop() {
 }
 
 // Resolve a name. The merkle proofs will be validated automatically.
-func (self *ENSLiteClient) Resolve(name string) ([]dns.RR, error) {
+func (self *ENSLiteClient) ResolveDNS(name string) ([]dns.RR, error) {
 	var rr []dns.RR
 	rpc, err := self.node.Attach()
 	if err != nil {
@@ -134,18 +136,38 @@ func (self *ENSLiteClient) Resolve(name string) ([]dns.RR, error) {
 	if sp != nil {
 		return rr, ErrorBlockchainSyncing
 	}
-	if self.nameService == nil {
+	if self.dnsService == nil {
 		reg, err := ens.New(api, common.HexToAddress("0x314159265dD8dbb310642f98f50C066173C1259b"), bind.TransactOpts{})
 		if err != nil {
 			return rr, err
 		}
-		self.nameService = reg
+		self.dnsService = reg
 	}
-	resolver, err := self.nameService.GetResolver(name)
+	resolver, err := self.dnsService.GetResolver(name)
 	if err != nil {
 		return rr, err
 	}
 	return resolver.GetRRs()
+}
+
+func (self *ENSLiteClient) ResolveAddress(name string) (addr common.Hash, err error) {
+	rpc, err := self.node.Attach()
+	if err != nil {
+		return addr, err
+	}
+	api := ethclient.NewClient(rpc)
+	sp, _ := api.SyncProgress(context.Background())
+	if sp != nil {
+		return addr, ErrorBlockchainSyncing
+	}
+	if self.addrService == nil {
+		reg, err := ens2.NewENS(&bind.TransactOpts{}, common.HexToAddress("0x314159265dD8dbb310642f98f50C066173C1259b"), api)
+		if err != nil {
+			return addr, err
+		}
+		self.addrService = reg
+	}
+	return self.addrService.Resolve(name)
 }
 
 func (self *ENSLiteClient) SyncProgress() (*ethereum.SyncProgress, error) {

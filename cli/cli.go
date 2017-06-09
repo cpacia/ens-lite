@@ -19,6 +19,10 @@ func SetupCli(parser *flags.Parser) {
 		"resolve a name",
 		"Resolve a name. The merkle proofs will be validated automatically.",
 		&resolve)
+	parser.AddCommand("address",
+		"resolve an address",
+		"Resolve an ethereum address for a name.",
+		&address)
 	parser.AddCommand("lookup",
 		"lookup DNS records",
 		"Fetch the full DNS record for a name",
@@ -49,7 +53,28 @@ func (x *Resolve) Execute(args []string) error {
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
-	resp, err := client.Get("http://" + api.Addr + "/resolver/" + args[0])
+	resp, err := client.Get("http://" + api.Addr + "/resolver/dns/" + args[0])
+	if err != nil || resp.StatusCode != http.StatusOK {
+		fmt.Println("Not found")
+		return err
+	}
+	h, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(h))
+	return nil
+}
+
+type Address struct{}
+
+var address Address
+
+func (x *Address) Execute(args []string) error {
+	client := &http.Client{
+		Timeout: 60 * time.Second,
+	}
+	resp, err := client.Get("http://" + api.Addr + "/resolver/address/" + args[0])
 	if err != nil || resp.StatusCode != http.StatusOK {
 		fmt.Println("Not found")
 		return err
@@ -70,7 +95,7 @@ func (x *Lookup) Execute(args []string) error {
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
-	resp, err := client.Get("http://" + api.Addr + "/resolver/" + args[0] + "?lookup=true")
+	resp, err := client.Get("http://" + api.Addr + "/resolver/dns/" + args[0] + "?lookup=true")
 	if err != nil || resp.StatusCode != http.StatusOK {
 		return err
 	}
